@@ -1,50 +1,53 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { fetchNodes, fetchCost } from '@/services/mapApi'
 
 const router = useRouter()
 const route = useRoute()
 
 // ============================================================================
-// Data — node_id ↔ zh mapping (TODO: replace with backend endpoint)
+// Data — node_id ↔ zh mapping (fetched from backend)
 // ============================================================================
 interface LocationNode {
   id: string
   name: string
   icon: string
-  estimatedTime: number
 }
 
-const nodeMap: Record<string, LocationNode> = {
-  entrance:      { id: 'entrance',      name: '入口',   icon: 'mdi-door-open',       estimatedTime: 0 },
-  registration:  { id: 'registration',  name: '挂号处', icon: 'mdi-ticket-outline',  estimatedTime: 2 },
-  consultation:  { id: 'consultation',  name: '诊室',   icon: 'mdi-stethoscope',     estimatedTime: 4 },
-  cashier:       { id: 'cashier',       name: '缴费处', icon: 'mdi-cash',            estimatedTime: 3 },
-  pharmacy:      { id: 'pharmacy',      name: '药房',   icon: 'mdi-pill',            estimatedTime: 2 },
-  exit:          { id: 'exit',          name: '出口',   icon: 'mdi-door-closed',     estimatedTime: 1 },
-  ct_room:       { id: 'ct_room',       name: 'CT室',   icon: 'mdi-radiology-box',   estimatedTime: 3 },
-  ultrasound:    { id: 'ultrasound',    name: 'B超室',  icon: 'mdi-ultrasound',      estimatedTime: 3 },
-  lab:           { id: 'lab',           name: '化验室', icon: 'mdi-test-tube',       estimatedTime: 3 },
-  restroom:      { id: 'restroom',      name: '洗手间', icon: 'mdi-toilet',          estimatedTime: 2 },
-  inpatient:     { id: 'inpatient',     name: '住院部', icon: 'mdi-bed',             estimatedTime: 3 },
+const iconMap: Record<string, string> = {
+  entrance:             'mdi-door-open',
+  quit:                 'mdi-door-closed',
+  registration_center:  'mdi-ticket-outline',
+  emergency_clinic:     'mdi-stethoscope',
+  surgery_clinic:       'mdi-needle',
+  internal_clinic:      'mdi-heart-pulse',
+  pediatric_clinic:     'mdi-baby-face-outline',
+  pharmacy:             'mdi-pill',
+  payment_center:       'mdi-cash',
+  toilet:               'mdi-toilet',
 }
 
-const allLocationIds = Object.keys(nodeMap)
+const nodeMap = ref<Record<string, LocationNode>>({})
+const isLoading = ref(true)
 
 function getInitialPath(): string[] {
   const raw = route.query.previous_path
-  if (typeof raw !== 'string' || !raw.trim()) return ['entrance', 'exit']
-  return raw.split(',').filter((id) => nodeMap[id] != null)
+  if (typeof raw !== 'string' || !raw.trim()) return ['entrance', 'quit']
+  return raw.split(',').filter((id) => nodeMap.value[id] != null)
 }
+
+const allLocationIds = computed(() => Object.keys(nodeMap.value))
 
 // ============================================================================
 // State
 // ============================================================================
-const currentPath = ref<string[]>(getInitialPath())
+const currentPath = ref<string[]>([])
 const phase = ref<'planning' | 'navigating'>('planning')
 const currentStepIndex = ref(0)
 const isDragOver = ref(false)
 const dragSource = ref<{ type: 'pool' | 'path'; name: string; index?: number } | null>(null)
+const edgeCosts = ref<Record<string, number | null>>({})
 
 let dragCounter = 0
 
@@ -52,14 +55,34 @@ let dragCounter = 0
 // Computed
 // ============================================================================
 const availableLocations = computed(() =>
-  allLocationIds.filter((id) => !currentPath.value.includes(id)),
+  allLocationIds.value.filter((id) => !currentPath.value.includes(id)),
 )
 
 const isLastStep = computed(() => currentStepIndex.value >= currentPath.value.length)
 
-function getEstimatedTime(id: string): number {
-  return nodeMap[id]?.estimatedTime ?? 3
+function getEstimatedTime(stepIndex: number): number | null {
+  if (stepIndex === 0) return 0
+  const key = currentPath.value[stepIndex - 1] + '->' + currentPath.value[stepIndex]
+  const cost = edgeCosts.value[key]
+  if (cost === null || cost === undefined) return null
+  return cost * 5
 }
+
+onMounted(async () => {
+  try {
+    const nodes = await fetchNodes()
+    for (const n of nodes) {
+      nodeMap.value[n.id] = {
+        id: n.id,
+        name: n.name,
+        icon: iconMap[n.id] || 'mdi-map-marker',
+      }
+    }
+    currentPath.value = getInitialPath()
+  } finally {
+    isLoading.value = false
+  }
+})
 
 // ============================================================================
 // Drag & Drop
@@ -121,7 +144,17 @@ function removeFromPath(index: number) {
 // ============================================================================
 // Navigation
 // ============================================================================
-function confirmRoute() {
+async function confirmRoute() {
+  const costs: Record<string, number | null> = {}
+  for (let i = 1; i < currentPath.value.length; i++) {
+    const key = currentPath.value[i - 1] + '->' + currentPath.value[i]
+    try {
+      costs[key] = await fetchCost(currentPath.value[i - 1], currentPath.value[i])
+    } catch {
+      costs[key] = null
+    }
+  }
+  edgeCosts.value = costs
   phase.value = 'navigating'
   currentStepIndex.value = 0
 }
@@ -148,6 +181,15 @@ function exitNavigation() {
       <div class="bg-blob bg-blob--secondary" />
 
       <div class="planning-container">
+        <!-- Loading state -->
+        <template v-if="isLoading">
+          <div class="loading-state">
+            <v-progress-circular indeterminate color="#00606d" size="40" width="3" />
+            <p class="loading-text">加载地图数据...</p>
+          </div>
+        </template>
+
+        <template v-else>
         <h2 class="planning-title">路线规划</h2>
 
         <!-- Path display (drop zone) -->
@@ -172,7 +214,6 @@ function exitNavigation() {
             <!-- Location chip -->
             <div
               class="path-chip"
-              :class="{ 'chip-highlight': loc === 'consultation' }"
               draggable="true"
               @dragstart="handleDragStart($event, i, 'path')"
               @dragover.prevent.stop
@@ -220,6 +261,7 @@ function exitNavigation() {
         <button class="confirm-btn" @click="confirmRoute">
           确认路线，开始导航
         </button>
+        </template>
       </div>
     </div>
 
@@ -250,7 +292,7 @@ function exitNavigation() {
                     mdi-clock-outline
                   </v-icon>
                   <span class="time-badge__text">
-                    预计时间：{{ getEstimatedTime(currentPath[currentStepIndex]) }}分钟
+                    预计时间：{{ getEstimatedTime(currentStepIndex) !== null ? getEstimatedTime(currentStepIndex) + '分钟' : '未知' }}
                   </span>
                 </div>
               </div>
@@ -337,6 +379,23 @@ $background: #f7fafb;
   letter-spacing: -0.02em;
 }
 
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 0;
+  gap: 1rem;
+}
+
+.loading-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.875rem;
+  color: $on-surface-variant;
+  opacity: 0.6;
+  margin: 0;
+}
+
 // Path display (drop zone)
 .path-area {
   display: flex;
@@ -382,12 +441,6 @@ $background: #f7fafb;
     cursor: grabbing;
   }
 
-  &.chip-highlight {
-    color: $primary;
-    font-weight: 600;
-    border-color: rgba($primary, 0.3);
-    background: rgba($primary, 0.05);
-  }
 }
 
 .chip-icon {
