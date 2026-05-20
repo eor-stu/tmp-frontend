@@ -114,6 +114,26 @@ const isDesktop = () => windowWidth.value >= 600
                 </v-btn>
               </div>
             </router-link>
+
+            <!-- Navigation Card -->
+            <router-link to="/triage-car" class="service-card">
+              <div class="card-content">
+                <div class="icon-container">
+                  <v-icon size="32" :color="secondary">mdi-directions</v-icon>
+                </div>
+                <h2 class="card-title">导航指引</h2>
+                <p class="card-description">查看前往诊室的实时导航路线。</p>
+              </div>
+              <div class="card-action">
+                <v-btn
+                  icon
+                  size="48"
+                  class="arrow-btn"
+                >
+                  <v-icon size="24" color="white">mdi-arrow-right</v-icon>
+                </v-btn>
+              </div>
+            </router-link>
           </div>
         </section>
       </div>
@@ -277,7 +297,7 @@ $background: #f7fafb;
   gap: 1.5rem;
 
   @media (min-width: 600px) {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 1.5rem;
   }
 }

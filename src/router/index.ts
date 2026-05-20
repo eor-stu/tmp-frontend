@@ -27,6 +27,11 @@ const routes: RouteRecordRaw[] = [
     name: 'about',
     component: () => import('@/pages/About.vue'),
   },
+  {
+    path: '/triage-car',
+    name: 'triage-car',
+    component: () => import('@/pages/TriageCarPage.vue'),
+  },
 ]
 
 const router = createRouter({
