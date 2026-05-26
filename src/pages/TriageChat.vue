@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ChatInput from '@/components/ui/ChatInput.vue'
 import TypewriterText from '@/components/ui/TypewriterText.vue'
@@ -30,6 +31,29 @@ const CLINIC_NAME_MAP: Record<string, string> = {
   surgery_clinic: '外科诊室',
   internal_clinic: '内科诊室',
   pediatric_clinic: '儿科诊室',
+}
+
+const router = useRouter()
+
+// ZH display name → EN node_id mapping (for TriageCar navigation)
+const ROUTE_ZH_TO_EN: Record<string, string> = {
+  '入口': 'entrance',
+  '挂号处': 'registration_center',
+  '缴费处': 'payment_center',
+  '药房': 'pharmacy',
+  '出口': 'quit',
+  '急诊室': 'emergency_clinic',
+  '外科诊室': 'surgery_clinic',
+  '内科诊室': 'internal_clinic',
+  '儿科诊室': 'pediatric_clinic',
+  '卫生间': 'toilet',
+}
+
+function convertRouteToNodeIds(route: string[]): string[] {
+  return route.map(name => {
+    const cleaned = name.replace(/（[^）]*）/g, '')
+    return ROUTE_ZH_TO_EN[cleaned] || ROUTE_ZH_TO_EN[name] || name
+  })
 }
 
 // Conversation state
@@ -480,6 +504,9 @@ async function finishNavigation() {
   displayedMessages.value.push(finalMessage)
   await nextTick()
   await playAnimationSequence(displayedMessages.value.length - 1)
+
+  const nodeIds = convertRouteToNodeIds(conversation.value.route || [])
+  router.push('/triage-car?previous_path=' + nodeIds.join(','))
 }
 
 // Show error message in chat
