@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useVoiceTTS } from '@/composables/useVoiceTTS'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ChatInput from '@/components/ui/ChatInput.vue'
 
@@ -48,6 +49,19 @@ const sendMessage = (content: string) => {
     console.error('Failed to send message:', error)
   }
 }
+
+const { playText } = useVoiceTTS()
+
+// Auto-TTS on new bot messages
+watch(
+  () => messages.value.filter(m => m.type === 'bot').length,
+  async () => {
+    if (!settings.isVoiceReadingEnabled) return
+    const lastBot = [...messages.value].reverse().find(m => m.type === 'bot')
+    if (!lastBot || !lastBot.content) return
+    await playText(lastBot.content)
+  }
+)
 </script>
 
 <template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ChatInput from '@/components/ui/ChatInput.vue'
@@ -24,6 +24,8 @@ import {
   patchRoute,
 } from '@/services/triageApi'
 import type { RequirementSummary } from '@/services/triageApi'
+import { useSettingsStore } from '@/stores/settings'
+import { useVoiceTTS } from '@/composables/useVoiceTTS'
 
 // Clinic ID to name mapping
 const CLINIC_NAME_MAP: Record<string, string> = {
@@ -34,6 +36,10 @@ const CLINIC_NAME_MAP: Record<string, string> = {
 }
 
 const router = useRouter()
+
+// TTS playback for bot replies
+const settings = useSettingsStore()
+const { playText } = useVoiceTTS()
 
 // ZH display name → EN node_id mapping (for TriageCar navigation)
 const ROUTE_ZH_TO_EN: Record<string, string> = {
@@ -635,6 +641,20 @@ const handleConfirmClick = async (msgIdx: number) => {
     showError('确认失败，请重试')
   }
 }
+
+// Auto-TTS on new bot messages
+watch(
+  () => displayedMessages.value.filter(m => m.type === 'bot').length,
+  async () => {
+    if (!settings.isVoiceReadingEnabled) return
+    const lastBot = [...displayedMessages.value].reverse().find(m => m.type === 'bot')
+    if (!lastBot) return
+    const text = lastBot.content
+      .filter((b): b is string => typeof b === 'string')
+      .join(' ')
+    if (text) await playText(text)
+  }
+)
 </script>
 
 <template>
