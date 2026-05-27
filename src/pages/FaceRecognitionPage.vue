@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import TypewriterText from '@/components/ui/TypewriterText.vue'
 
 const router = useRouter()
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
@@ -8,8 +9,21 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 const videoRef = ref<HTMLVideoElement | null>(null)
 const capturedImage = ref<string | null>(null)
 const stream = ref<MediaStream | null>(null)
-const status = ref<'idle' | 'loading' | 'done'>('idle')
+const status = ref<'idle' | 'loading' | 'done' | 'register'>('idle')
 const username = ref<string | null>(null)
+const nameInput = ref('')
+const typewriterRef = ref<InstanceType<typeof TypewriterText> | null>(null)
+
+const greetingText = computed(() => username.value ? `${username.value} 您好` : '')
+
+watch(status, async (s) => {
+  if (s !== 'done') return
+  await nextTick()
+  await typewriterRef.value?.start()
+  setTimeout(() => {
+    router.push('/')
+  }, 2500)
+})
 
 onMounted(async () => {
   try {
@@ -34,25 +48,69 @@ async function capture() {
   canvas.width = video.videoWidth
   canvas.height = video.videoHeight
   canvas.getContext('2d')!.drawImage(video, 0, 0)
-  capturedImage.value = canvas.toDataURL('image/jpeg')
+  const dataUrl = canvas.toDataURL('image/jpeg')
+  capturedImage.value = dataUrl
   status.value = 'loading'
 
   try {
-    const res = await fetch(`${BASE_URL}/face-recog`, {
+    const form = new FormData()
+    form.append('image', dataUrlToBlob(dataUrl), 'face.jpg')
+
+    const res = await fetch(`${BASE_URL}/face/face-recog`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: capturedImage.value }),
+      body: form,
     })
     const data = await res.json()
-    username.value = data.username
-    status.value = 'done'
 
-    setTimeout(() => {
-      router.push('/')
-    }, 2500)
+    if (!data.exist) {
+      status.value = 'register'
+      return
+    }
+
+    username.value = data.name
+    status.value = 'done'
   } catch {
     status.value = 'idle'
   }
+}
+
+async function registerName() {
+  const name = nameInput.value.trim()
+  if (!name || !capturedImage.value) return
+
+  status.value = 'loading'
+
+  try {
+    const form = new FormData()
+    form.append('name', name)
+    form.append('image', dataUrlToBlob(capturedImage.value), 'face.jpg')
+
+    const res = await fetch(`${BASE_URL}/face/register`, {
+      method: 'POST',
+      body: form,
+    })
+    const data = await res.json()
+
+    if (data.success) {
+      router.push('/')
+    } else {
+      status.value = 'register'
+    }
+  } catch {
+    status.value = 'register'
+  }
+}
+
+function dataUrlToBlob(dataUrl: string): Blob {
+  const parts = dataUrl.split(',')
+  const mime = parts[0].match(/:(.*?);/)![1]
+  const bytes = atob(parts[1])
+  const buf = new ArrayBuffer(bytes.length)
+  const arr = new Uint8Array(buf)
+  for (let i = 0; i < bytes.length; i++) {
+    arr[i] = bytes.charCodeAt(i)
+  }
+  return new Blob([buf], { type: mime })
 }
 </script>
 
@@ -83,11 +141,31 @@ async function capture() {
       </div>
 
       <!-- Loading overlay -->
-      <div v-if="status !== 'idle'" class="loading-overlay">
-        <div v-if="status === 'loading'" class="loading-spinner" />
-        <p class="loading-text">
-          {{ status === 'done' ? `${username} 您好` : '登录中...' }}
-        </p>
+      <div v-if="status === 'loading' || status === 'done'" class="loading-overlay">
+        <template v-if="status === 'loading'">
+          <div class="loading-spinner" />
+          <p class="loading-text">登录中...</p>
+        </template>
+        <TypewriterText
+          v-else
+          ref="typewriterRef"
+          :content="greetingText"
+          class="greeting-text"
+        />
+      </div>
+
+      <!-- Register overlay -->
+      <div v-if="status === 'register'" class="loading-overlay">
+        <p class="register-title">未识别到您的面容</p>
+        <input
+          v-model="nameInput"
+          class="register-input"
+          placeholder="请输入您的姓名"
+          @keyup.enter="registerName"
+        />
+        <button class="capture-btn" @click="registerName">
+          确认注册
+        </button>
       </div>
     </div>
   </v-main>
@@ -225,6 +303,44 @@ $background: #f7fafb;
   font-weight: 500;
   color: $on-surface-variant;
   margin: 0;
+}
+
+.register-title {
+  font-family: 'Manrope', sans-serif;
+  font-weight: 600;
+  font-size: 1.125rem;
+  color: $on-surface;
+  margin: 0;
+}
+
+.register-input {
+  width: 100%;
+  max-width: 260px;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba($outline-variant, 0.3);
+  background: rgba($surface-container-lowest, 0.9);
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  color: $on-surface;
+  text-align: center;
+  outline: none;
+  transition: border-color 150ms ease;
+
+  &:focus {
+    border-color: $primary-container;
+  }
+
+  &::placeholder {
+    color: rgba($on-surface-variant, 0.5);
+  }
+}
+
+.greeting-text :deep(.typewriter-char) {
+  font-size: 2.5rem;
+  font-family: 'Manrope', sans-serif;
+  font-weight: 700;
+  color: $primary;
 }
 
 @keyframes spin {
