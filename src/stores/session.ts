@@ -3,6 +3,15 @@ import { ref, computed } from 'vue'
 import type { User, SessionState } from '@/types/stores'
 
 const SESSION_TOKEN_KEY = 'ufc-session-token'
+const FACE_USER_KEY = 'ufc-face-user'
+
+function loadFaceUserFromStorage(): string | null {
+  try {
+    return localStorage.getItem(FACE_USER_KEY)
+  } catch {
+    return null
+  }
+}
 
 function loadSessionFromStorage(): Partial<SessionState> {
   try {
@@ -30,6 +39,7 @@ export const useSessionStore = defineStore('session', () => {
   const isAuthenticated = ref(stored.isAuthenticated ?? false)
   const user = ref<User | null>(stored.user ?? null)
   const sessionToken = ref<string | null>(stored.sessionToken ?? null)
+  const faceUserName = ref<string | null>(loadFaceUserFromStorage())
 
   // Getters
   const userEmail = computed(() => user.value?.email ?? null)
@@ -54,6 +64,7 @@ export const useSessionStore = defineStore('session', () => {
     isAuthenticated.value = false
     try {
       sessionStorage.removeItem(SESSION_TOKEN_KEY)
+      localStorage.removeItem(FACE_USER_KEY)
     } catch {
       // ignore storage errors
     }
@@ -65,6 +76,15 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function setFaceUser(name: string) {
+    faceUserName.value = name
+    try {
+      localStorage.setItem(FACE_USER_KEY, name)
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   return {
     isAuthenticated,
     user,
@@ -72,8 +92,10 @@ export const useSessionStore = defineStore('session', () => {
     userEmail,
     displayName,
     isLoggedIn,
+    faceUserName,
     login,
     logout,
     updateUser,
+    setFaceUser,
   }
 })

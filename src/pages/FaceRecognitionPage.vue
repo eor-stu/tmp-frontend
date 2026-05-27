@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useSessionStore } from '@/stores/session'
 import TypewriterText from '@/components/ui/TypewriterText.vue'
 
 const router = useRouter()
+const sessionStore = useSessionStore()
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
 
 const videoRef = ref<HTMLVideoElement | null>(null)
@@ -68,6 +70,7 @@ async function capture() {
     }
 
     username.value = data.name
+    sessionStore.setFaceUser(data.name)
     status.value = 'done'
   } catch {
     status.value = 'idle'

@@ -1,11 +1,21 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useSessionStore } from '@/stores/session'
 import { useVoiceTTS } from '@/composables/useVoiceTTS'
+import { fetchFaceUsers } from '@/services/faceApi'
 import AppHeader from '@/components/ui/AppHeader.vue'
 import ChatInput from '@/components/ui/ChatInput.vue'
 
 const settings = useSettingsStore()
+const sessionStore = useSessionStore()
+
+const CLINIC_CN_NAME: Record<string, string> = {
+  emergency_clinic: '急诊室',
+  surgery_clinic: '外科诊室',
+  internal_clinic: '内科诊室',
+  pediatric_clinic: '儿科诊室',
+}
 
 interface ChecklistItem {
   text: string
@@ -30,12 +40,29 @@ const checklistItems = ref<ChecklistItem[]>([
   { text: '呼吸练习 (10 分钟)', subtext: '预约下午 2:00', done: false }
 ])
 
-const messages = ref<Message[]>([
-  {
-    type: 'bot',
-    content: '您好！有什么我可以给您服务的吗？想提什么问题我都会尽力回答的！'
+const messages = ref<Message[]>([])
+
+onMounted(async () => {
+  try {
+    const users = await fetchFaceUsers()
+    const currentUser = users.find(u => u.name === sessionStore.faceUserName)
+
+    let greeting: string
+    if (!currentUser || !currentUser.last_clinic_id) {
+      greeting = '看起来你还没有就诊过。有什么想问的吗？'
+    } else {
+      const clinicName = CLINIC_CN_NAME[currentUser.last_clinic_id] || currentUser.last_clinic_id
+      greeting = `你最近好像在${clinicName}就诊过。有什么想问的吗？`
+    }
+
+    messages.value.push({ type: 'bot', content: greeting })
+  } catch {
+    messages.value.push({
+      type: 'bot',
+      content: '您好！有什么我可以给您服务的吗？想提什么问题我都会尽力回答的！',
+    })
   }
-])
+})
 
 const sendMessage = (content: string) => {
   try {
